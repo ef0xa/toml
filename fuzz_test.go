@@ -134,30 +134,31 @@ distros = [
 	var before, after map[string]any
 	buf := bytes.NewBuffer(make([]byte, 0, 1024*16))
 	f.Fuzz(func(t *testing.T, file string) {
+		t.Log(file)
 		clear(before)
 		clear(after)
 		buf.Reset()
 		_, err := toml.Decode(file, &before)
 		if err != nil {
-			t.Run("no panic in ErrorWithPosition", func(t *testing.T) {
-				if err != nil {
-					defer func() {
-						if p := recover(); p != nil {
-							stack := debug.Stack()
-							t.Errorf("panic: %v\n%s", p, stack)
-						}
-					}()
-
-					// Make sure ErrorWithPosition doesn't panic.
-					var pErr toml.ParseError
-					if errors.As(err, &pErr) {
-						t.Logf("file=%q, err=%s", file, err.Error())
-						pErr.ErrorWithPosition()
+			t.Run("no panic in ParseError.ErrorWithPosition", func(t *testing.T) {
+				defer func() {
+					if p := recover(); p != nil {
+						stack := debug.Stack()
+						t.Errorf("panic: %v\n%s", p, stack)
 					}
-				}
-			})
-		}
+				}()
 
+				// Make sure ErrorWithPosition doesn't panic.
+				var pErr toml.ParseError
+				if errors.As(err, &pErr) {
+					t.Logf("file=%q, err=%s", file, err.Error())
+					pErr.ErrorWithPosition()
+				}
+
+			})
+			return
+
+		}
 		clear(after)
 
 		buf.Reset()
@@ -168,13 +169,15 @@ distros = [
 			t.Logf("error decoding encoded TOML: %v", err)
 			return
 		}
+		t.Run("no go-level diff", func(t *testing.T) {
 
-		if diffs := Diff(before, after); len(diffs) > 0 {
-			for _, d := range diffs {
-				t.Error(d)
+			if diffs := Diff(before, after); len(diffs) > 0 {
+				for _, d := range diffs {
+					t.Error(d)
+				}
+				return
 			}
-			return
-		}
+		})
 		t.Run("encoding is stable", func(t *testing.T) {
 			encoded := buf.String()
 			buf.Reset()
@@ -190,6 +193,7 @@ distros = [
 }
 
 func TestDiff(t *testing.T) {
+
 	before := map[string]any{
 		"a": int64(1),
 		"b": "string",
@@ -215,7 +219,7 @@ func TestDiff(t *testing.T) {
 			after: map[string]any{
 				"a": []any{int64(1)},
 				"b": int64(2),
-				"c": true,
+				"c": struct{ b bool }{true},
 				"d": []map[string]any{
 					{"x": "one"},
 				},
@@ -241,21 +245,31 @@ func TestDiff(t *testing.T) {
 			"g": float64(4.56),
 		}, keys: []string{"c", "d[0].x", "e.y", "f[2]", "g"}},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			diffs := Diff(before, tt.after)
-			if len(diffs) == 0 && len(tt.keys) > 0 {
-				t.Errorf("expected diffs, got none")
-			}
-		FINDDIFF:
-			for _, k := range tt.keys {
-				for _, d := range diffs {
-					if strings.Contains(d, k) {
-						continue FINDDIFF
-					}
+		t.Run(tt.name+"/forward", func(t *testing.T) { checkDiff(t, before, tt.after, tt.keys) })
+		t.Run(tt.name+"/backward", func(t *testing.T) { checkDiff(t, tt.after, before, tt.keys) })
+
+	}
+}
+func checkDiff(t testing.TB, a, b any, keys []string) {
+	t.Helper()
+	diffs := Diff(a, b)
+	if len(diffs) == 0 && len(keys) > 0 {
+		t.Errorf("expected diffs, got none")
+	}
+	if len(diffs) != len(keys) {
+		for _, d := range diffs {
+			t.Log(d)
+		}
+	FINDDIFF:
+		for _, k := range keys {
+			for _, d := range diffs {
+				if strings.Contains(d, k) {
+					continue FINDDIFF
 				}
-				t.Errorf("%s: missing diff", k)
 			}
-		})
+			t.Errorf("%s: missing diff", k)
+		}
+
 	}
 }
 
@@ -351,6 +365,6 @@ func appendElemDiff(diffs []string, v0, v1 any, prefix []byte) []string {
 		}
 		return diffs
 	default:
-		panic(fmt.Errorf("unsupported type %T in appendMapDiffs", v0))
+		return append(diffs, fmt.Sprintf("%s: unsupported type %T", prefix, v0))
 	}
 }
