@@ -171,12 +171,10 @@ distros = [
 		}
 		t.Run("no go-level diff", func(t *testing.T) {
 
-			if diffs := Diff(before, after); len(diffs) > 0 {
-				for _, d := range diffs {
-					t.Error(d)
-				}
-				return
+			for _, d := range Diff(before, after) {
+				t.Error(d)
 			}
+
 		})
 		t.Run("encoding is stable", func(t *testing.T) {
 			encoded := buf.String()
@@ -186,7 +184,6 @@ distros = [
 			if encoded != encoded2 {
 				t.Errorf("encoding is not stable:\nfirst:\n%s\nsecond:\n%s", encoded, encoded2)
 			}
-
 		})
 
 	})
