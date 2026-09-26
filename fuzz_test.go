@@ -166,7 +166,7 @@ distros = [
 
 		_, err = toml.Decode(buf.String(), &after)
 		if err != nil {
-			t.Logf("error decoding encoded TOML: %v", err)
+			t.Fatalf("error decoding encoded TOML: %v", err)
 			return
 		}
 		t.Run("no go-level diff", func(t *testing.T) {
